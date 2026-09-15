@@ -1,0 +1,13 @@
+[
+  {
+    "id": "dice-lab",
+    "label": "Dice Lab",
+    "description": "Public MCP server used to prove tool discovery, approval and execution.",
+    "kind": "remote_mcp",
+    "serverUrl": "https://dmcp-server.deno.dev/mcp",
+    "allowedTools": ["roll"],
+    "approval": "always",
+    "enabled": true,
+    "trusted": true
+  }
+]

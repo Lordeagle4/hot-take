@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0b0d0c" />
+    <meta name="description" content="Hot Take — a transparent AI agent lab." />
+    <title>Hot Take — Agent Lab</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="Hot Take home">
+          <span class="brand-mark">HT</span>
+          <span>HOT TAKE <small>AGENT LAB</small></span>
+        </a>
+        <div class="topbar-actions">
+          <span class="mode" id="mode"><i></i> CONNECTING</span>
+          <button class="button button-quiet" id="plugins-button">Plugins <span id="plugin-count">0</span></button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside class="rail architecture">
+          <p class="eyebrow">Runtime signal</p>
+          <h1>Watch the agent think in layers.</h1>
+          <p class="muted">Each request lights up only the knowledge and capabilities it needs.</p>
+
+          <div class="stack" id="stack">
+            <div class="stack-item active"><span>01</span><div><b>Intent</b><small>User request</small></div></div>
+            <div class="stack-item"><span>02</span><div><b>Skill</b><small id="active-skill">Waiting</small></div></div>
+            <div class="stack-item"><span>03</span><div><b>Plugin</b><small id="active-plugin">Waiting</small></div></div>
+            <div class="stack-item"><span>04</span><div><b>MCP tools</b><small id="active-tools">Waiting</small></div></div>
+            <div class="stack-item"><span>05</span><div><b>Approval</b><small id="active-approval">Guarded</small></div></div>
+          </div>
+
+          <div class="lesson">
+            <span class="lesson-index">CURRENT IDEA</span>
+            <p><strong>Skills are judgement.</strong> Plugins are access. MCP is the standard connection between the runtime and external tools.</p>
+          </div>
+        </aside>
+
+        <section class="chat-panel">
+          <div class="chat-head">
+            <div><p class="eyebrow">Conversation</p><h2>Agent console</h2></div>
+            <button class="icon-button" id="clear-button" title="Clear conversation" aria-label="Clear conversation">↺</button>
+          </div>
+
+          <div class="messages" id="messages" aria-live="polite">
+            <div class="message agent intro-message">
+              <div class="avatar">H</div>
+              <div class="bubble">
+                <p>I’m ready. Try <button class="inline-prompt" data-prompt="Roll 2d6+3 for me">“Roll 2d6+3 for me”</button> to watch a skill activate, an MCP server expose its tool, and an approval interrupt the run.</p>
+              </div>
+            </div>
+          </div>
+
+          <form class="composer" id="chat-form">
+            <label for="message">Ask Hot Take</label>
+            <div class="composer-row">
+              <textarea id="message" rows="1" placeholder="Send an intent, not a command…" maxlength="4000" required></textarea>
+              <button class="send-button" type="submit" aria-label="Send message">↗</button>
+            </div>
+            <div class="composer-meta"><span id="model-label">MODEL —</span><span>ENTER TO SEND · SHIFT+ENTER FOR LINE</span></div>
+          </form>
+        </section>
+
+        <aside class="rail trace-panel">
+          <div class="trace-head"><div><p class="eyebrow">Execution</p><h2>Live trace</h2></div><span id="trace-count">00</span></div>
+          <div class="trace-empty" id="trace-empty">
+            <span class="pulse-ring"></span>
+            <p>No run yet.</p>
+            <small>The orchestration loop will appear here.</small>
+          </div>
+          <ol class="trace" id="trace"></ol>
+        </aside>
+      </main>
+    </div>
+
+    <dialog id="plugins-dialog">
+      <div class="dialog-head">
+        <div><p class="eyebrow">Capability registry</p><h2>Installed plugins</h2></div>
+        <button class="icon-button" id="close-plugins" aria-label="Close plugins">×</button>
+      </div>
+      <p class="muted dialog-copy">Install a remote MCP server or an OpenAI connector. New plugins do nothing until a skill names them.</p>
+      <div class="plugin-list" id="plugin-list"></div>
+
+      <details class="install-card">
+        <summary>Install external plugin <span>+</span></summary>
+        <form id="plugin-form">
+          <div class="field-grid">
+            <label>ID<input name="id" placeholder="github" pattern="[a-z0-9][a-z0-9-]{1,39}" required /></label>
+            <label>Name<input name="label" placeholder="GitHub" required /></label>
+          </div>
+          <label>Description<input name="description" placeholder="Search and manage repositories" required /></label>
+          <div class="field-grid">
+            <label>Kind<select name="kind" id="plugin-kind"><option value="remote_mcp">Remote MCP</option><option value="connector">OpenAI connector</option></select></label>
+            <label>Approval<select name="approval"><option value="always">Always ask</option><option value="never">Never ask</option></select></label>
+          </div>
+          <label id="endpoint-label">Server URL<input name="serverUrl" type="url" placeholder="https://provider.example/mcp" /></label>
+          <label id="connector-label" hidden>Connector<select name="connectorId"><option value="connector_googledrive">Google Drive</option><option value="connector_gmail">Gmail</option><option value="connector_googlecalendar">Google Calendar</option><option value="connector_outlookemail">Outlook Email</option><option value="connector_outlookcalendar">Outlook Calendar</option><option value="connector_microsoftteams">Microsoft Teams</option><option value="connector_sharepoint">SharePoint</option><option value="connector_dropbox">Dropbox</option></select></label>
+          <label>Allowed tools <input name="allowedTools" placeholder="search, fetch (blank = all)" /></label>
+          <label>Token environment variable <input name="authorizationEnv" placeholder="HOT_TAKE_PLUGIN_GITHUB_TOKEN (optional)" /></label>
+          <label class="check"><input type="checkbox" name="trusted" /> <span>I trust the operator of this server</span></label>
+          <p class="form-error" id="plugin-error"></p>
+          <button class="button button-primary" type="submit">Install plugin</button>
+        </form>
+      </details>
+    </dialog>
+
+    <template id="approval-template">
+      <div class="approval-card">
+        <span class="approval-icon">!</span>
+        <div class="approval-body">
+          <p class="eyebrow">Permission checkpoint</p>
+          <h3>Allow <span data-tool></span>?</h3>
+          <p><span data-plugin></span> will receive:</p>
+          <pre data-arguments></pre>
+          <div class="approval-actions">
+            <button class="button button-quiet" data-reject>Reject</button>
+            <button class="button button-primary" data-approve>Approve once</button>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
