@@ -2,18 +2,16 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"os/signal"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/Lordeagle4/hot-take/agent"
@@ -50,7 +48,9 @@ func (exampleModel) Generate(_ context.Context, request provider.Request) (provi
 }
 
 func main() {
-	if err := run(context.Background(), os.Args[1:], os.Stdin, os.Stdout); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	if err := run(ctx, os.Args[1:], os.Stdin, os.Stdout); err != nil {
 		if _, writeErr := fmt.Fprintln(os.Stderr, "error:", err); writeErr != nil {
 			os.Exit(1)
 		}
@@ -120,9 +120,16 @@ func runProject(ctx context.Context, arguments []string, input io.Reader, output
 	flags := flag.NewFlagSet("run", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	projectDirectory := flags.String("project", ".", "agent project directory")
+	timeout := flags.Duration("timeout", agent.DefaultRunTimeout, "total run deadline including discovery and approvals")
+	maxToolCalls := flags.Int("max-tool-calls", agent.DefaultMaxToolCalls, "maximum tool calls per run")
 	if err := flags.Parse(arguments); err != nil {
 		return fmt.Errorf("parse run options: %w", err)
 	}
+	if *timeout <= 0 || *maxToolCalls <= 0 {
+		return fmt.Errorf("timeout and max-tool-calls must be positive")
+	}
+	ctx, cancel := context.WithTimeout(ctx, *timeout)
+	defer cancel()
 	message := strings.TrimSpace(strings.Join(flags.Args(), " "))
 	if message == "" {
 		return fmt.Errorf("usage: hot-take run [-project directory] <message>")
@@ -144,6 +151,8 @@ func runProject(ctx context.Context, arguments []string, input io.Reader, output
 		Name:         definition.Name,
 		Instructions: definition.Instructions,
 		MaxSteps:     definition.MaxSteps,
+		MaxToolCalls: *maxToolCalls,
+		RunTimeout:   *timeout,
 		Model:        model,
 		Skills:       definition.Skills,
 		Capabilities: capabilities,
@@ -170,7 +179,7 @@ func projectTools(ctx context.Context, definition *project.Definition, input io.
 		return nil, nil, nil, fmt.Errorf("register clock tool: %w", err)
 	}
 	capabilities := map[string][]string{"clock.read": {"clock_now"}}
-	var rules []permission.Rule
+	rules := []permission.Rule{{Tool: "clock_now", Mode: permission.Allow}}
 
 	for _, plugin := range definition.Plugins {
 		if plugin.Transport != "mcp_streamable_http" {
@@ -236,7 +245,7 @@ func projectTools(ctx context.Context, definition *project.Definition, input io.
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("create capability registry: %w", err)
 	}
-	policy, err := permission.NewPolicy(permission.Allow, rules, newTerminalApprover(input, output))
+	policy, err := permission.NewPolicy(permission.Deny, rules, newTerminalApprover(input, output))
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("create permission policy: %w", err)
 	}
@@ -268,33 +277,4 @@ func builtInTools() (*tool.Registry, *capability.Registry, error) {
 	}
 
 	return tools, capabilities, nil
-}
-
-type terminalApprover struct {
-	mu     sync.Mutex
-	reader *bufio.Reader
-	output io.Writer
-}
-
-func newTerminalApprover(input io.Reader, output io.Writer) *terminalApprover {
-	return &terminalApprover{reader: bufio.NewReader(input), output: output}
-}
-
-func (a *terminalApprover) Approve(ctx context.Context, request permission.Request) (bool, error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	select {
-	case <-ctx.Done():
-		return false, ctx.Err()
-	default:
-	}
-	if _, err := fmt.Fprintf(a.output, "Approve tool %s with arguments %s? [y/N] ", request.Call.Name, request.Call.Arguments); err != nil {
-		return false, fmt.Errorf("write approval prompt: %w", err)
-	}
-	answer, err := a.reader.ReadString('\n')
-	if err != nil && !(errors.Is(err, io.EOF) && answer != "") {
-		return false, fmt.Errorf("read approval response: %w", err)
-	}
-	answer = strings.ToLower(strings.TrimSpace(answer))
-	return answer == "y" || answer == "yes", nil
 }

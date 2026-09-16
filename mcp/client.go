@@ -294,6 +294,13 @@ func (c *Client) request(ctx context.Context, method string, name string, params
 	}
 
 	mediaType, _, mediaErr := mime.ParseMediaType(response.Header.Get("Content-Type"))
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		// Proxies and unavailable servers often return plain text or HTML.
+		// Preserve the useful status without reflecting untrusted response bodies.
+		if mediaErr != nil || (mediaType != "application/json" && mediaType != "text/event-stream") {
+			return nil, fmt.Errorf("%w: HTTP status %d", ErrProtocol, response.StatusCode)
+		}
+	}
 	if mediaErr != nil {
 		return nil, fmt.Errorf("%w: parse response content type: %v", ErrProtocol, mediaErr)
 	}

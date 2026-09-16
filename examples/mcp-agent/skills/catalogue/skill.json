@@ -1,0 +1,7 @@
+{
+  "name": "catalogue",
+  "description": "Look up product availability.",
+  "instructions": "SKILL.md",
+  "examples": ["stock", "catalogue", "product"],
+  "required_capabilities": ["catalogue.read"]
+}

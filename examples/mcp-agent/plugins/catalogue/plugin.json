@@ -1,0 +1,7 @@
+{
+  "name": "catalogue",
+  "transport": "mcp_streamable_http",
+  "endpoint": "http://127.0.0.1:8787/mcp",
+  "approval": "ask",
+  "capabilities": [{"name": "catalogue.read", "tools": ["catalogue.lookup"]}]
+}

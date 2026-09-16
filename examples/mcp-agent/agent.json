@@ -1,0 +1,9 @@
+{
+  "name": "Catalogue Agent",
+  "instructions": "instructions.md",
+  "default_skill": "catalogue",
+  "skills_directory": "skills",
+  "plugins_directory": "plugins",
+  "max_steps": 4,
+  "provider": {"name": "openai", "model": "gpt-6-astra"}
+}

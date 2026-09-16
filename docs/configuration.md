@@ -107,3 +107,30 @@ See [MCP support](mcp.md) for the implemented protocol boundary.
 The CLI composes the `openai` provider, the built-in `clock.read` capability,
 and configured MCP plugins. The framework contracts allow applications to
 compose different providers and tools without changing `agent.Runtime`.
+
+## Run limits and cancellation
+
+`run -timeout 2m -max-tool-calls 32` sets the total wall-clock deadline and tool
+execution budget. These are the defaults; both flags require positive values.
+The deadline includes plugin discovery, model requests and human approval.
+`max_steps` independently limits model turns. An oversized tool-call batch is
+rejected before any tool in that batch executes; earlier completed calls are
+not rolled back. Tool calls are not automatically retried.
+
+The CLI's permission fallback is **deny**. The built-in clock has an explicit
+allow rule; each configured plugin tool receives its manifest's rule. A model
+cannot invoke a registered tool outside the selected skill's capability scope.
+
+Ctrl+C cancels the run context. Native tools and custom model providers must
+honour their context: Go cannot forcibly stop arbitrary application code.
+`agent.Config.MaxToolCalls` and `RunTimeout` expose the same limits to SDK users;
+zero selects the default, while negative values are rejected.
+
+Terminal approval returns on cancellation even while input is blocked. Because
+an arbitrary `io.Reader` cannot be forcibly interrupted, cancellation retires
+that approver permanently; its reader owner must close a blocked reader to
+release the one pending read. The CLI releases stdin when it exits. A late
+answer is never reused to approve another tool call.
+
+See [the integration walkthrough](integration.md) for an executable plugin
+example, denial exercise and transport-failure exercise.

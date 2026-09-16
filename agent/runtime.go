@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -17,6 +18,12 @@ import (
 	"github.com/Lordeagle4/hot-take/tool"
 )
 
+// DefaultMaxToolCalls bounds tool executions when Config.MaxToolCalls is zero.
+const DefaultMaxToolCalls = 32
+
+// DefaultRunTimeout bounds runs when Config.RunTimeout is zero.
+const DefaultRunTimeout = 2 * time.Minute
+
 var (
 	// ErrInvalidConfiguration reports a runtime with missing dependencies.
 	ErrInvalidConfiguration = errors.New("invalid runtime configuration")
@@ -24,6 +31,10 @@ var (
 	ErrEmptyInput = errors.New("empty input")
 	// ErrStepLimit reports a run that did not finish within its configured limit.
 	ErrStepLimit = errors.New("agent step limit reached")
+	// ErrToolCallLimit reports a model batch exceeding the remaining call budget.
+	ErrToolCallLimit = errors.New("agent tool call limit reached")
+	// ErrToolNotSelected reports a request outside the selected skill scope.
+	ErrToolNotSelected = errors.New("tool is outside selected skill scope")
 )
 
 // Config contains the dependencies and limits required by a Runtime.
@@ -31,6 +42,10 @@ type Config struct {
 	Name         string
 	Instructions string
 	MaxSteps     int
+	// MaxToolCalls defaults to DefaultMaxToolCalls; negative values are invalid.
+	MaxToolCalls int
+	// RunTimeout defaults to DefaultRunTimeout; dependencies must honour context.
+	RunTimeout   time.Duration
 	Model        provider.Model
 	Skills       *skill.Registry
 	Capabilities *capability.Registry
@@ -45,6 +60,8 @@ type Runtime struct {
 	name         string
 	instructions string
 	maxSteps     int
+	maxToolCalls int
+	runTimeout   time.Duration
 	model        provider.Model
 	skills       *skill.Registry
 	capabilities *capability.Registry
@@ -63,6 +80,15 @@ func NewRuntime(config Config) (*Runtime, error) {
 	if config.MaxSteps < 1 {
 		return nil, fmt.Errorf("%w: MaxSteps must be positive", ErrInvalidConfiguration)
 	}
+	if config.MaxToolCalls < 0 || config.RunTimeout < 0 {
+		return nil, fmt.Errorf("%w: tool call limit and timeout cannot be negative", ErrInvalidConfiguration)
+	}
+	if config.MaxToolCalls == 0 {
+		config.MaxToolCalls = DefaultMaxToolCalls
+	}
+	if config.RunTimeout == 0 {
+		config.RunTimeout = DefaultRunTimeout
+	}
 	if config.Model == nil || config.Skills == nil || config.Capabilities == nil || config.Tools == nil || config.Authorizer == nil {
 		return nil, fmt.Errorf("%w: model, skills, capabilities, tools, and authorizer are required", ErrInvalidConfiguration)
 	}
@@ -77,6 +103,8 @@ func NewRuntime(config Config) (*Runtime, error) {
 		name:         config.Name,
 		instructions: config.Instructions,
 		maxSteps:     config.MaxSteps,
+		maxToolCalls: config.MaxToolCalls,
+		runTimeout:   config.RunTimeout,
 		model:        config.Model,
 		skills:       config.Skills,
 		capabilities: config.Capabilities,
@@ -89,6 +117,11 @@ func NewRuntime(config Config) (*Runtime, error) {
 
 // Run processes one user input until a final answer or error is produced.
 func (r *Runtime) Run(ctx context.Context, input string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, r.runTimeout)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	input = strings.TrimSpace(input)
 	if input == "" {
 		return "", ErrEmptyInput
@@ -117,11 +150,18 @@ func (r *Runtime) Run(ctx context.Context, input string) (string, error) {
 	items := []provider.Item{{Message: &provider.Message{Role: provider.User, Content: input}}}
 	instructions := strings.TrimSpace(r.instructions) + "\n\n" + strings.TrimSpace(selected.Instructions)
 	var providerState []byte
+	toolCalls := 0
 
 	for step := 1; step <= r.maxSteps; step++ {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
 		turn, generateErr := r.model.Generate(ctx, provider.Request{Instructions: instructions, Items: items, Tools: definitions, State: providerState})
 		if generateErr != nil {
 			return "", fmt.Errorf("generate model turn %d: %w", step, generateErr)
+		}
+		if err := ctx.Err(); err != nil {
+			return "", err
 		}
 		providerState = append(providerState[:0], turn.State...)
 		if err := r.publish(ctx, event.ModelCompleted, runID, r.name, step); err != nil {
@@ -138,6 +178,15 @@ func (r *Runtime) Run(ctx context.Context, input string) (string, error) {
 
 			return answer, nil
 		}
+		// Reject an oversized batch before any partial side effects occur.
+		if len(turn.ToolCalls) > r.maxToolCalls-toolCalls {
+			return "", fmt.Errorf("%w: maximum %d", ErrToolCallLimit, r.maxToolCalls)
+		}
+		for _, call := range turn.ToolCalls {
+			if !slices.Contains(toolNames, call.Name) {
+				return "", fmt.Errorf("%w: %s", ErrToolNotSelected, call.Name)
+			}
+		}
 		if strings.TrimSpace(turn.Text) != "" {
 			items = append(items, provider.Item{Message: &provider.Message{Role: provider.Assistant, Content: turn.Text}})
 		}
@@ -145,6 +194,9 @@ func (r *Runtime) Run(ctx context.Context, input string) (string, error) {
 		for _, call := range turn.ToolCalls {
 			if strings.TrimSpace(call.ID) == "" || strings.TrimSpace(call.Name) == "" {
 				return "", fmt.Errorf("generate model turn %d: tool call ID and name are required", step)
+			}
+			if err := ctx.Err(); err != nil {
+				return "", err
 			}
 			callCopy := call
 			items = append(items, provider.Item{ToolCall: &callCopy})
@@ -158,6 +210,10 @@ func (r *Runtime) Run(ctx context.Context, input string) (string, error) {
 			if err != nil {
 				return "", fmt.Errorf("resolve requested tool %q: %w", call.Name, err)
 			}
+			if err := ctx.Err(); err != nil {
+				return "", err
+			}
+			toolCalls++
 			content, err := candidate.Execute(ctx, call.Arguments)
 			if err != nil {
 				return "", fmt.Errorf("execute tool %q: %w", call.Name, err)

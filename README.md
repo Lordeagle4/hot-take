@@ -46,6 +46,12 @@ The CLI reads credentials from the process environment and never from project
 configuration. See [the configuration guide](docs/configuration.md) for the
 project schema and directory layout.
 
+Try the [complete MCP integration walkthrough](docs/integration.md) for a local
+read-only plugin, interactive approval, rejection and failure handling.
+
+Runs default to a two-minute deadline and 32 tool calls. Override these with
+`run -timeout 90s -max-tool-calls 8`; Ctrl+C cancels an active run.
+
 Run the quality checks:
 
 ```bash
