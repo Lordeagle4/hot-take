@@ -1,74 +1,66 @@
 # Hot Take
 
-Hot Take is a deliberately transparent AI agent demo. It shows the complete path from a user's intent to a selected skill, scoped plugin, MCP tool discovery, human approval, tool result and final answer.
+Hot Take is a small, explicit framework for building tool-using AI agents in Go.
+It provides the runtime and contracts; applications provide the model, skills,
+tools, permission policy, and integrations.
 
-It is small enough to read in one sitting and real enough to connect to remote MCP servers through OpenAI's Responses API.
+The project is intentionally provider-neutral. OpenAI, another hosted model, or
+a local model can implement the same `provider.Model` interface without changing
+the agent runtime.
 
-## What it demonstrates
+## Status
 
-- **Skills as procedural knowledge** — Markdown files define when a capability applies, which plugins it may use and how the agent should behave.
-- **Plugins as installable access** — add a remote MCP server or an OpenAI connector without changing the runtime.
-- **Tools discovered over MCP** — the Responses API imports the enabled server's tool schemas.
-- **Approval gates** — MCP calls pause before data leaves the agent and continue only after the user approves.
-- **Conversation memory** — `previous_response_id` preserves the response chain and avoids needlessly importing the same MCP tool list again.
-- **A visible execution trace** — every routing, discovery, approval, result and answer event is surfaced in the interface.
-- **Safe token handling** — access tokens come from `HOT_TAKE_PLUGIN_*` environment variables or live only in process memory; they are never written to `plugins.json`.
+Hot Take is pre-alpha. The current slice establishes the public contracts and a
+tested agent loop. Expect breaking changes until the first tagged release.
 
-## Run it
+## Design principles
 
-Hot Take requires Node.js 24 or newer and has no npm dependencies.
+- Skills contain task-specific judgement and instructions.
+- Tools perform concrete operations.
+- Capabilities describe what a tool can do without naming a vendor.
+- Providers translate the framework's model contract to a model API.
+- Permission policies govern every tool call before execution.
+- Runtime events make selection and execution observable.
+
+See [the architecture guide](docs/architecture.md) for the dependency rules and
+request lifecycle.
+
+## Quick start
+
+Run the deterministic example agent:
 
 ```bash
-cp .env.example .env
-set -a && source .env && set +a
-npm start
+go run ./cmd/hot-take "What time is it?"
 ```
 
-Open <http://localhost:3000>.
-
-Without `OPENAI_API_KEY`, the app starts in clearly labelled **simulation mode**. `Roll 2d6+3 for me` still demonstrates skill routing and the approval interruption. Add an API key to make the Responses API discover and call the public Dice Lab MCP server for real.
-
-Run the tests with:
+Run the quality checks:
 
 ```bash
-npm test
+gofmt -w .
+go vet ./...
+go test -race ./...
 ```
 
-## Architecture
+## Repository layout
 
 ```text
-Browser
-  → HTTP runtime
-    → SkillRegistry selects skills/*/SKILL.md
-    → PluginRegistry scopes data/plugins.json
-    → OpenAIRuntime sends only those MCP definitions
-      → Responses API imports tools/list
-      → model requests a tool call
-      → Hot Take pauses for approval
-      → Responses API calls the MCP server
-      → model returns the final answer
+agent/       orchestration loop and public runtime types
+capability/  vendor-neutral capability registry
+event/       runtime observability contracts
+permission/  tool-call authorisation policies
+provider/    model-provider contracts
+skill/       skill definitions and deterministic routing
+tool/        tool definitions, calls, and registry
+tools/       first-party native tools
+cmd/         executable examples and future CLI
+docs/        architecture and contributor documentation
 ```
 
-The preinstalled `tabletop` skill names `dice-lab`; therefore Dice Lab is invisible to ordinary questions. That is the distinction this demo is meant to make tangible: a skill tells the runtime **how and when**, while a plugin gives it **access**.
+## Contributing
 
-## Install a plugin
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Every
+change must be formatted, statically analysed, tested, and documented.
 
-Open **Plugins** in the top-right corner. You can install:
+## Licence
 
-1. A remote MCP server using its public HTTPS endpoint.
-2. An OpenAI connector using one of the connector IDs offered in the form.
-
-The plugin is intentionally inert until a skill includes its ID in `plugins: [...]`. Add a new directory under `skills/`, create its `SKILL.md`, and name the plugin in that front matter.
-
-Use `allowedTools` to narrow a server's exposed capability surface. Keep approval set to `always` for anything that reads private data, writes, sends, purchases or deletes. Only trusted plugins can be configured to skip approval.
-
-## Current demo boundaries
-
-- Sessions and pasted connection tokens are in memory and disappear on restart.
-- Plugin manifests persist in a local JSON file; production should use a database and encrypted credential vault.
-- Skill routing is deterministic keyword scoring so the selection is easy to inspect. A production router can combine deterministic policy with model classification.
-- OAuth client registration and refresh-token exchange belong in a real authentication service. This demo accepts a short-lived access token or reads one from an environment variable.
-
-## Important security note
-
-Remote MCP tool definitions and results are untrusted input. Connect only to servers whose operator you trust, expose the smallest possible `allowedTools` set, and keep approvals enabled for sensitive actions.
+Hot Take is available under the [MIT Licence](LICENSE).
