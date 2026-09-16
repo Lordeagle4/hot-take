@@ -3,6 +3,7 @@
   "instructions": "instructions.md",
   "default_skill": "general",
   "skills_directory": "skills",
+  "plugins_directory": "plugins",
   "max_steps": 8,
   "provider": {
     "name": "openai",

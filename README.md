@@ -11,8 +11,9 @@ the agent runtime.
 ## Status
 
 Hot Take is pre-alpha. The current slice establishes the public contracts, a
-declarative project loader, an OpenAI Responses provider, and a test-covered
-agent loop. Expect breaking changes until the first tagged release.
+declarative project loader, an OpenAI Responses provider, a modern MCP
+Streamable HTTP client, explicit approval policies, and a test-covered agent
+loop. Expect breaking changes until the first tagged release.
 
 ## Design principles
 
@@ -63,6 +64,7 @@ permission/  tool-call authorisation policies
 provider/    model-provider contracts
 providers/   concrete model-provider adapters
 project/     strict declarative project loading
+mcp/         modern MCP Streamable HTTP client and tool adapter
 skill/       skill definitions and deterministic routing
 starter/     runnable base-agent project
 tool/        tool definitions, calls, and registry

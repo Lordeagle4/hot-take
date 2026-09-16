@@ -29,6 +29,24 @@ type Provider struct {
 	Model string `json:"model"`
 }
 
+// PluginCapability maps a vendor-neutral capability to remote MCP tool names.
+type PluginCapability struct {
+	Name  string   `json:"name"`
+	Tools []string `json:"tools"`
+}
+
+// Plugin is a validated external capability provider loaded from a manifest.
+// TokenEnvironment names an environment variable; credentials are never read
+// or retained by the project loader.
+type Plugin struct {
+	Name             string             `json:"name"`
+	Transport        string             `json:"transport"`
+	Endpoint         string             `json:"endpoint"`
+	TokenEnvironment string             `json:"token_environment,omitempty"`
+	Approval         string             `json:"approval"`
+	Capabilities     []PluginCapability `json:"capabilities"`
+}
+
 // Definition is a validated, fully loaded agent project.
 type Definition struct {
 	Name         string
@@ -36,6 +54,7 @@ type Definition struct {
 	MaxSteps     int
 	Provider     Provider
 	Skills       *skill.Registry
+	Plugins      []Plugin
 }
 
 // Loader reads agent.json, instructions, and skill definitions from a project.
@@ -88,6 +107,10 @@ func (Loader) Load(directory string) (*Definition, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: build skill registry: %v", ErrInvalid, err)
 	}
+	plugins, err := loadPlugins(root, manifest.PluginsDirectory)
+	if err != nil {
+		return nil, err
+	}
 
 	return &Definition{
 		Name:         manifest.Name,
@@ -95,6 +118,7 @@ func (Loader) Load(directory string) (*Definition, error) {
 		MaxSteps:     manifest.MaxSteps,
 		Provider:     manifest.Provider,
 		Skills:       registry,
+		Plugins:      plugins,
 	}, nil
 }
 
@@ -103,6 +127,7 @@ type manifest struct {
 	Instructions    string   `json:"instructions"`
 	DefaultSkill    string   `json:"default_skill"`
 	SkillsDirectory string   `json:"skills_directory"`
+	PluginsDirectory string  `json:"plugins_directory,omitempty"`
 	MaxSteps        int      `json:"max_steps"`
 	Provider        Provider `json:"provider"`
 }
@@ -133,6 +158,139 @@ func validateManifest(candidate manifest) error {
 	}
 
 	return nil
+}
+
+func loadPlugins(root string, relativeDirectory string) ([]Plugin, error) {
+	if strings.TrimSpace(relativeDirectory) == "" {
+		return nil, nil
+	}
+	directory, err := resolveWithin(root, relativeDirectory)
+	if err != nil {
+		return nil, fmt.Errorf("resolve plugins directory: %w", err)
+	}
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return nil, fmt.Errorf("load plugins directory: %w", err)
+	}
+	plugins := make([]Plugin, 0, len(entries))
+	seen := make(map[string]struct{}, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if !validID(entry.Name()) {
+			return nil, fmt.Errorf("%w: plugin directory %q is not a lowercase identifier", ErrInvalid, entry.Name())
+		}
+		pluginDirectory, err := resolveWithin(directory, entry.Name())
+		if err != nil {
+			return nil, fmt.Errorf("resolve plugin %q: %w", entry.Name(), err)
+		}
+		manifestPath, err := resolveWithin(pluginDirectory, "plugin.json")
+		if err != nil {
+			return nil, fmt.Errorf("resolve plugin %q manifest: %w", entry.Name(), err)
+		}
+		var plugin Plugin
+		if err := readJSON(manifestPath, &plugin); err != nil {
+			return nil, fmt.Errorf("%w: load plugin %q manifest: %v", ErrInvalid, entry.Name(), err)
+		}
+		if plugin.Name != entry.Name() {
+			return nil, fmt.Errorf("%w: plugin directory %q does not match name %q", ErrInvalid, entry.Name(), plugin.Name)
+		}
+		if err := validatePlugin(plugin); err != nil {
+			return nil, err
+		}
+		if _, exists := seen[plugin.Name]; exists {
+			return nil, fmt.Errorf("%w: duplicate plugin %q", ErrInvalid, plugin.Name)
+		}
+		seen[plugin.Name] = struct{}{}
+		plugins = append(plugins, plugin)
+	}
+	return plugins, nil
+}
+
+func validatePlugin(plugin Plugin) error {
+	if !validID(plugin.Name) {
+		return fmt.Errorf("%w: plugin name %q is not a lowercase identifier", ErrInvalid, plugin.Name)
+	}
+	if plugin.Transport != "mcp_streamable_http" {
+		return fmt.Errorf("%w: plugin %q has unsupported transport %q", ErrInvalid, plugin.Name, plugin.Transport)
+	}
+	if strings.TrimSpace(plugin.Endpoint) == "" {
+		return fmt.Errorf("%w: plugin %q endpoint is required", ErrInvalid, plugin.Name)
+	}
+	if plugin.TokenEnvironment != "" && !validEnvironmentName(plugin.TokenEnvironment) {
+		return fmt.Errorf("%w: plugin %q token_environment is invalid", ErrInvalid, plugin.Name)
+	}
+	if plugin.Approval != "allow" && plugin.Approval != "deny" && plugin.Approval != "ask" {
+		return fmt.Errorf("%w: plugin %q approval must be allow, deny, or ask", ErrInvalid, plugin.Name)
+	}
+	if len(plugin.Capabilities) == 0 {
+		return fmt.Errorf("%w: plugin %q has no capabilities", ErrInvalid, plugin.Name)
+	}
+	seenCapabilities := make(map[string]struct{}, len(plugin.Capabilities))
+	for _, capability := range plugin.Capabilities {
+		if !validCapability(capability.Name) {
+			return fmt.Errorf("%w: plugin %q capability %q is invalid", ErrInvalid, plugin.Name, capability.Name)
+		}
+		if _, exists := seenCapabilities[capability.Name]; exists {
+			return fmt.Errorf("%w: plugin %q repeats capability %q", ErrInvalid, plugin.Name, capability.Name)
+		}
+		seenCapabilities[capability.Name] = struct{}{}
+		if len(capability.Tools) == 0 {
+			return fmt.Errorf("%w: plugin %q capability %q has no tools", ErrInvalid, plugin.Name, capability.Name)
+		}
+		seenTools := make(map[string]struct{}, len(capability.Tools))
+		for _, toolName := range capability.Tools {
+			if !validMCPToolName(toolName) {
+				return fmt.Errorf("%w: plugin %q has invalid MCP tool name %q", ErrInvalid, plugin.Name, toolName)
+			}
+			if _, exists := seenTools[toolName]; exists {
+				return fmt.Errorf("%w: plugin %q capability %q repeats tool %q", ErrInvalid, plugin.Name, capability.Name, toolName)
+			}
+			seenTools[toolName] = struct{}{}
+		}
+	}
+	return nil
+}
+
+func validEnvironmentName(value string) bool {
+	if value == "" || (value[0] < 'A' || value[0] > 'Z') && value[0] != '_' {
+		return false
+	}
+	for _, character := range value {
+		if (character >= 'A' && character <= 'Z') || (character >= '0' && character <= '9') || character == '_' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func validCapability(value string) bool {
+	parts := strings.Split(value, ".")
+	if len(parts) < 2 {
+		return false
+	}
+	for _, part := range parts {
+		if !validID(part) {
+			return false
+		}
+	}
+	return true
+}
+
+func validMCPToolName(value string) bool {
+	if len(value) < 1 || len(value) > 128 {
+		return false
+	}
+	for _, character := range value {
+		if (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+			(character >= '0' && character <= '9') || character == '_' || character == '-' || character == '.' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func loadSkills(directory string) ([]skill.Skill, error) {

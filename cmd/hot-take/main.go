@@ -2,16 +2,23 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
+	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/Lordeagle4/hot-take/agent"
 	"github.com/Lordeagle4/hot-take/capability"
+	"github.com/Lordeagle4/hot-take/mcp"
 	"github.com/Lordeagle4/hot-take/permission"
 	"github.com/Lordeagle4/hot-take/project"
 	"github.com/Lordeagle4/hot-take/provider"
@@ -20,6 +27,8 @@ import (
 	"github.com/Lordeagle4/hot-take/tool"
 	clocktool "github.com/Lordeagle4/hot-take/tools/clock"
 )
+
+const applicationVersion = "0.1.0-dev"
 
 type exampleModel struct{}
 
@@ -41,7 +50,7 @@ func (exampleModel) Generate(_ context.Context, request provider.Request) (provi
 }
 
 func main() {
-	if err := run(context.Background(), os.Args[1:], os.Stdout); err != nil {
+	if err := run(context.Background(), os.Args[1:], os.Stdin, os.Stdout); err != nil {
 		if _, writeErr := fmt.Fprintln(os.Stderr, "error:", err); writeErr != nil {
 			os.Exit(1)
 		}
@@ -49,7 +58,7 @@ func main() {
 	}
 }
 
-func run(ctx context.Context, arguments []string, output io.Writer) error {
+func run(ctx context.Context, arguments []string, input io.Reader, output io.Writer) error {
 	if len(arguments) == 0 {
 		return fmt.Errorf("usage: hot-take <demo|run> [options] <message>")
 	}
@@ -57,7 +66,7 @@ func run(ctx context.Context, arguments []string, output io.Writer) error {
 	case "demo":
 		return runDemo(ctx, arguments[1:], output)
 	case "run":
-		return runProject(ctx, arguments[1:], output)
+		return runProject(ctx, arguments[1:], input, output)
 	default:
 		return fmt.Errorf("unknown command %q: expected demo or run", arguments[0])
 	}
@@ -107,15 +116,15 @@ func runDemo(ctx context.Context, arguments []string, output io.Writer) error {
 	return nil
 }
 
-func runProject(ctx context.Context, arguments []string, output io.Writer) error {
+func runProject(ctx context.Context, arguments []string, input io.Reader, output io.Writer) error {
 	flags := flag.NewFlagSet("run", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	projectDirectory := flags.String("project", ".", "agent project directory")
 	if err := flags.Parse(arguments); err != nil {
 		return fmt.Errorf("parse run options: %w", err)
 	}
-	input := strings.TrimSpace(strings.Join(flags.Args(), " "))
-	if input == "" {
+	message := strings.TrimSpace(strings.Join(flags.Args(), " "))
+	if message == "" {
 		return fmt.Errorf("usage: hot-take run [-project directory] <message>")
 	}
 
@@ -127,7 +136,7 @@ func runProject(ctx context.Context, arguments []string, output io.Writer) error
 	if err != nil {
 		return err
 	}
-	tools, capabilities, err := builtInTools()
+	tools, capabilities, authorizer, err := projectTools(ctx, definition, input, output)
 	if err != nil {
 		return err
 	}
@@ -139,12 +148,12 @@ func runProject(ctx context.Context, arguments []string, output io.Writer) error
 		Skills:       definition.Skills,
 		Capabilities: capabilities,
 		Tools:        tools,
-		Authorizer:   permission.AllowAll{},
+		Authorizer:   authorizer,
 	})
 	if err != nil {
 		return fmt.Errorf("create runtime: %w", err)
 	}
-	answer, err := runtime.Run(ctx, input)
+	answer, err := runtime.Run(ctx, message)
 	if err != nil {
 		return err
 	}
@@ -153,6 +162,85 @@ func runProject(ctx context.Context, arguments []string, output io.Writer) error
 	}
 
 	return nil
+}
+
+func projectTools(ctx context.Context, definition *project.Definition, input io.Reader, output io.Writer) (*tool.Registry, *capability.Registry, permission.Authorizer, error) {
+	tools := tool.NewRegistry()
+	if err := tools.Register(clocktool.New(nil)); err != nil {
+		return nil, nil, nil, fmt.Errorf("register clock tool: %w", err)
+	}
+	capabilities := map[string][]string{"clock.read": {"clock_now"}}
+	var rules []permission.Rule
+
+	for _, plugin := range definition.Plugins {
+		if plugin.Transport != "mcp_streamable_http" {
+			return nil, nil, nil, fmt.Errorf("connect plugin %q: unsupported transport %q", plugin.Name, plugin.Transport)
+		}
+		token := ""
+		if plugin.TokenEnvironment != "" {
+			var exists bool
+			token, exists = os.LookupEnv(plugin.TokenEnvironment)
+			if !exists || strings.TrimSpace(token) == "" {
+				return nil, nil, nil, fmt.Errorf("connect plugin %q: environment variable %s is required", plugin.Name, plugin.TokenEnvironment)
+			}
+		}
+		client, err := mcp.New(mcp.Config{
+			Endpoint:      plugin.Endpoint,
+			BearerToken:   token,
+			ClientName:    "hot-take",
+			ClientVersion: applicationVersion,
+			HTTPClient:    &http.Client{Timeout: 30 * time.Second},
+		})
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("connect plugin %q: %w", plugin.Name, err)
+		}
+		advertised, err := client.ListTools(ctx)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("discover plugin %q tools: %w", plugin.Name, err)
+		}
+		definitions := make(map[string]mcp.ToolDefinition, len(advertised))
+		for _, candidate := range advertised {
+			definitions[candidate.Name] = candidate
+		}
+		remoteCapabilities := make(map[string][]string)
+		for _, mapping := range plugin.Capabilities {
+			for _, remoteName := range mapping.Tools {
+				if _, exists := definitions[remoteName]; !exists {
+					return nil, nil, nil, fmt.Errorf("plugin %q did not advertise configured tool %q", plugin.Name, remoteName)
+				}
+				remoteCapabilities[remoteName] = append(remoteCapabilities[remoteName], mapping.Name)
+			}
+		}
+		remoteNames := make([]string, 0, len(remoteCapabilities))
+		for remoteName := range remoteCapabilities {
+			remoteNames = append(remoteNames, remoteName)
+		}
+		sort.Strings(remoteNames)
+		for _, remoteName := range remoteNames {
+			bound, err := mcp.NewRemoteTool(client, plugin.Name, definitions[remoteName], remoteCapabilities[remoteName])
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("bind plugin %q tool %q: %w", plugin.Name, remoteName, err)
+			}
+			if err := tools.Register(bound); err != nil {
+				return nil, nil, nil, fmt.Errorf("register plugin %q tool %q: %w", plugin.Name, remoteName, err)
+			}
+			localName := bound.Definition().Name
+			for _, capabilityName := range remoteCapabilities[remoteName] {
+				capabilities[capabilityName] = append(capabilities[capabilityName], localName)
+			}
+			rules = append(rules, permission.Rule{Tool: localName, Mode: permission.Mode(plugin.Approval)})
+		}
+	}
+
+	capabilityRegistry, err := capability.NewRegistry(capabilities)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("create capability registry: %w", err)
+	}
+	policy, err := permission.NewPolicy(permission.Allow, rules, newTerminalApprover(input, output))
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("create permission policy: %w", err)
+	}
+	return tools, capabilityRegistry, policy, nil
 }
 
 func projectModel(config project.Provider) (provider.Model, error) {
@@ -180,4 +268,33 @@ func builtInTools() (*tool.Registry, *capability.Registry, error) {
 	}
 
 	return tools, capabilities, nil
+}
+
+type terminalApprover struct {
+	mu     sync.Mutex
+	reader *bufio.Reader
+	output io.Writer
+}
+
+func newTerminalApprover(input io.Reader, output io.Writer) *terminalApprover {
+	return &terminalApprover{reader: bufio.NewReader(input), output: output}
+}
+
+func (a *terminalApprover) Approve(ctx context.Context, request permission.Request) (bool, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	select {
+	case <-ctx.Done():
+		return false, ctx.Err()
+	default:
+	}
+	if _, err := fmt.Fprintf(a.output, "Approve tool %s with arguments %s? [y/N] ", request.Call.Name, request.Call.Arguments); err != nil {
+		return false, fmt.Errorf("write approval prompt: %w", err)
+	}
+	answer, err := a.reader.ReadString('\n')
+	if err != nil && !(errors.Is(err, io.EOF) && answer != "") {
+		return false, fmt.Errorf("read approval response: %w", err)
+	}
+	answer = strings.ToLower(strings.TrimSpace(answer))
+	return answer == "y" || answer == "yes", nil
 }

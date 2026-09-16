@@ -53,9 +53,21 @@ it.
 ## Permissions
 
 Every tool call passes through `permission.Authorizer`. Applications may allow,
-deny, or ask a human. The core ships with explicit allow and deny policies only;
-interactive approval belongs in an adapter because the framework cannot assume
-a terminal, web UI, or background worker.
+deny, or ask a human. `permission.Policy` applies exact tool-name rules, while
+the CLI supplies the terminal-specific approver. A web application can provide
+a different `permission.Approver` without changing the runtime or policy.
+
+## MCP boundary
+
+The `mcp` package is a transport and tool adapter; `agent` does not depend on
+it. The client implements the stateless `2026-07-28` Streamable HTTP revision,
+including per-request metadata, JSON and request-scoped SSE responses,
+pagination, routing headers, and `x-mcp-header` extraction.
+
+Plugin manifests are explicit allowlists. Discovery verifies that every
+configured remote tool exists, but server-advertised tools absent from the
+manifest are not registered. Local names are prefixed with the manifest plugin
+name so two servers cannot silently claim the same tool identity.
 
 ## Error policy
 
