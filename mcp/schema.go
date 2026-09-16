@@ -12,9 +12,9 @@ import (
 var errInvalidHeaderDefinition = errors.New("invalid MCP tool header definition")
 
 type headerBinding struct {
-	name     string
+	name      string
 	valueType string
-	path     []string
+	path      []string
 }
 
 func validateToolDefinition(definition *ToolDefinition) error {

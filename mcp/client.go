@@ -208,9 +208,9 @@ type implementation struct {
 }
 
 type requestMetadata struct {
-	ProtocolVersion   string         `json:"io.modelcontextprotocol/protocolVersion"`
-	ClientInfo        implementation `json:"io.modelcontextprotocol/clientInfo"`
-	ClientCapabilities struct{}      `json:"io.modelcontextprotocol/clientCapabilities"`
+	ProtocolVersion    string         `json:"io.modelcontextprotocol/protocolVersion"`
+	ClientInfo         implementation `json:"io.modelcontextprotocol/clientInfo"`
+	ClientCapabilities struct{}       `json:"io.modelcontextprotocol/clientCapabilities"`
 }
 
 type listToolsParams struct {
@@ -247,7 +247,7 @@ type rpcResponse struct {
 func (c *Client) metadata() requestMetadata {
 	return requestMetadata{
 		ProtocolVersion: ProtocolVersion,
-		ClientInfo: implementation{Name: c.clientName, Version: c.clientVersion},
+		ClientInfo:      implementation{Name: c.clientName, Version: c.clientVersion},
 	}
 }
 

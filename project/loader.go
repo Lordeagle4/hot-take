@@ -123,13 +123,13 @@ func (Loader) Load(directory string) (*Definition, error) {
 }
 
 type manifest struct {
-	Name            string   `json:"name"`
-	Instructions    string   `json:"instructions"`
-	DefaultSkill    string   `json:"default_skill"`
-	SkillsDirectory string   `json:"skills_directory"`
-	PluginsDirectory string  `json:"plugins_directory,omitempty"`
-	MaxSteps        int      `json:"max_steps"`
-	Provider        Provider `json:"provider"`
+	Name             string   `json:"name"`
+	Instructions     string   `json:"instructions"`
+	DefaultSkill     string   `json:"default_skill"`
+	SkillsDirectory  string   `json:"skills_directory"`
+	PluginsDirectory string   `json:"plugins_directory,omitempty"`
+	MaxSteps         int      `json:"max_steps"`
+	Provider         Provider `json:"provider"`
 }
 
 type skillManifest struct {
