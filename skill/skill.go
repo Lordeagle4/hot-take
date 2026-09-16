@@ -95,6 +95,11 @@ func validate(candidate Skill) error {
 			return fmt.Errorf("%w: skill %q has an empty capability", ErrInvalid, candidate.Name)
 		}
 	}
+	for _, example := range candidate.Examples {
+		if strings.TrimSpace(example) == "" {
+			return fmt.Errorf("%w: skill %q has an empty routing example", ErrInvalid, candidate.Name)
+		}
+	}
 
 	return nil
 }

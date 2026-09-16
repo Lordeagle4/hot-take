@@ -1,0 +1,7 @@
+{
+  "name": "general",
+  "description": "Handle requests that do not require a specialised skill.",
+  "instructions": "SKILL.md",
+  "examples": [],
+  "required_capabilities": []
+}

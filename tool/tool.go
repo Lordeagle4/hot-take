@@ -12,6 +12,7 @@ type Definition struct {
 	Description  string
 	InputSchema  json.RawMessage
 	Capabilities []string
+	Strict       bool
 }
 
 // Call is a model-requested tool execution.

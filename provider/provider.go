@@ -3,6 +3,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/Lordeagle4/hot-take/tool"
 )
@@ -35,12 +36,15 @@ type Request struct {
 	Instructions string
 	Items        []Item
 	Tools        []tool.Definition
+	State        json.RawMessage
 }
 
-// Turn is one provider response. A final turn has text and no tool calls.
+// Turn is one provider response. State is opaque continuation data owned by
+// the provider implementation. A final turn has text and no tool calls.
 type Turn struct {
 	Text      string
 	ToolCalls []tool.Call
+	State     json.RawMessage
 }
 
 // Model produces the next agent turn.

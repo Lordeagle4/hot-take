@@ -33,6 +33,7 @@ func (*Tool) Definition() tool.Definition {
 		Capabilities: []string{
 			"clock.read",
 		},
+		Strict: true,
 	}
 }
 

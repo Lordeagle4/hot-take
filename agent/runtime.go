@@ -116,12 +116,14 @@ func (r *Runtime) Run(ctx context.Context, input string) (string, error) {
 	}
 	items := []provider.Item{{Message: &provider.Message{Role: provider.User, Content: input}}}
 	instructions := strings.TrimSpace(r.instructions) + "\n\n" + strings.TrimSpace(selected.Instructions)
+	var providerState []byte
 
 	for step := 1; step <= r.maxSteps; step++ {
-		turn, generateErr := r.model.Generate(ctx, provider.Request{Instructions: instructions, Items: items, Tools: definitions})
+		turn, generateErr := r.model.Generate(ctx, provider.Request{Instructions: instructions, Items: items, Tools: definitions, State: providerState})
 		if generateErr != nil {
 			return "", fmt.Errorf("generate model turn %d: %w", step, generateErr)
 		}
+		providerState = append(providerState[:0], turn.State...)
 		if err := r.publish(ctx, event.ModelCompleted, runID, r.name, step); err != nil {
 			return "", err
 		}

@@ -22,6 +22,11 @@ Concrete model clients, MCP transports, storage adapters, and application UIs
 belong outside `agent`. This prevents any vendor or protocol from becoming a
 framework primitive.
 
+Provider continuation data is carried as opaque state. The runtime stores and
+returns it without interpretation. This allows the OpenAI adapter to preserve a
+Responses chain through `previous_response_id`, including reasoning items that
+must not be reconstructed by the framework core.
+
 ## Runtime lifecycle
 
 1. Validate the user input.

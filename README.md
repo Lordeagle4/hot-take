@@ -10,8 +10,9 @@ the agent runtime.
 
 ## Status
 
-Hot Take is pre-alpha. The current slice establishes the public contracts and a
-tested agent loop. Expect breaking changes until the first tagged release.
+Hot Take is pre-alpha. The current slice establishes the public contracts, a
+declarative project loader, an OpenAI Responses provider, and a test-covered
+agent loop. Expect breaking changes until the first tagged release.
 
 ## Design principles
 
@@ -27,11 +28,22 @@ request lifecycle.
 
 ## Quick start
 
-Run the deterministic example agent:
+Run the deterministic offline demonstration:
 
 ```bash
-go run ./cmd/hot-take "What time is it?"
+go run ./cmd/hot-take demo "What time is it?"
 ```
+
+Run the declarative base agent with the OpenAI Responses API:
+
+```bash
+export OPENAI_API_KEY="your-project-api-key"
+go run ./cmd/hot-take run -project ./starter/base "What time is it?"
+```
+
+The CLI reads credentials from the process environment and never from project
+configuration. See [the configuration guide](docs/configuration.md) for the
+project schema and directory layout.
 
 Run the quality checks:
 
@@ -49,10 +61,13 @@ capability/  vendor-neutral capability registry
 event/       runtime observability contracts
 permission/  tool-call authorisation policies
 provider/    model-provider contracts
+providers/   concrete model-provider adapters
+project/     strict declarative project loading
 skill/       skill definitions and deterministic routing
+starter/     runnable base-agent project
 tool/        tool definitions, calls, and registry
 tools/       first-party native tools
-cmd/         executable examples and future CLI
+cmd/         command-line application
 docs/        architecture and contributor documentation
 ```
 

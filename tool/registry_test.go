@@ -57,3 +57,23 @@ func TestRegistryRejectsDuplicateName(t *testing.T) {
 		t.Fatalf("second Register() error = %v, want ErrAlreadyRegistered", err)
 	}
 }
+
+func TestRegistryRejectsInvalidSchema(t *testing.T) {
+	t.Parallel()
+
+	registry := tool.NewRegistry()
+	candidate := invalidSchemaTool{}
+	if err := registry.Register(candidate); !errors.Is(err, tool.ErrInvalidDefinition) {
+		t.Fatalf("Register() error = %v, want ErrInvalidDefinition", err)
+	}
+}
+
+type invalidSchemaTool struct{}
+
+func (invalidSchemaTool) Definition() tool.Definition {
+	return tool.Definition{Name: "invalid", Description: "Invalid schema.", InputSchema: json.RawMessage(`{`)}
+}
+
+func (invalidSchemaTool) Execute(context.Context, json.RawMessage) (json.RawMessage, error) {
+	return json.RawMessage(`{}`), nil
+}

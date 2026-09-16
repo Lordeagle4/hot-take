@@ -41,6 +41,7 @@ func (fixedTool) Definition() tool.Definition {
 		Description:  "Return the current time.",
 		InputSchema:  json.RawMessage(`{"type":"object","additionalProperties":false}`),
 		Capabilities: []string{"clock.read"},
+		Strict:       true,
 	}
 }
 
@@ -52,7 +53,7 @@ func TestRuntimeExecutesAuthorisedToolLoop(t *testing.T) {
 	t.Parallel()
 
 	model := &scriptedModel{turns: []provider.Turn{
-		{ToolCalls: []tool.Call{{ID: "call-1", Name: "clock_now", Arguments: json.RawMessage(`{}`)}}},
+		{ToolCalls: []tool.Call{{ID: "call-1", Name: "clock_now", Arguments: json.RawMessage(`{}`)}}, State: json.RawMessage(`{"cursor":"next"}`)},
 		{Text: "It is noon UTC."},
 	}}
 	events := make([]event.Event, 0)
@@ -70,6 +71,9 @@ func TestRuntimeExecutesAuthorisedToolLoop(t *testing.T) {
 	}
 	if len(model.requests) != 2 {
 		t.Fatalf("Generate() calls = %d, want 2", len(model.requests))
+	}
+	if string(model.requests[1].State) != `{"cursor":"next"}` {
+		t.Fatalf("second request state = %s", model.requests[1].State)
 	}
 	secondItems := model.requests[1].Items
 	if len(secondItems) != 3 || secondItems[1].ToolCall == nil {

@@ -1,6 +1,7 @@
 package tool
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -37,8 +38,8 @@ func (r *Registry) Register(candidate Tool) error {
 	if strings.TrimSpace(definition.Name) == "" || strings.TrimSpace(definition.Description) == "" {
 		return fmt.Errorf("%w: name and description are required", ErrInvalidDefinition)
 	}
-	if len(definition.InputSchema) == 0 {
-		return fmt.Errorf("%w: %s has no input schema", ErrInvalidDefinition, definition.Name)
+	if len(definition.InputSchema) == 0 || !json.Valid(definition.InputSchema) {
+		return fmt.Errorf("%w: %s has no valid JSON input schema", ErrInvalidDefinition, definition.Name)
 	}
 
 	r.mu.Lock()

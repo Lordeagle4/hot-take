@@ -1,0 +1,7 @@
+{
+  "name": "clock",
+  "description": "Answer questions about the current date and time.",
+  "instructions": "SKILL.md",
+  "examples": ["time", "date", "day"],
+  "required_capabilities": ["clock.read"]
+}
