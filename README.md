@@ -10,10 +10,23 @@ the agent runtime.
 
 ## Status
 
-Hot Take is pre-alpha. The current slice establishes the public contracts, a
-declarative project loader, an OpenAI Responses provider, a modern MCP
-Streamable HTTP client, explicit approval policies, and a test-covered agent
-loop. Expect breaking changes until the first tagged release.
+Hot Take **v0.1.0-alpha.1** is a developer alpha. Public APIs and configuration
+formats may change. Live hosted-model verification and independent onboarding
+are still outstanding; see the [release notes](docs/releases/v0.1.0-alpha.1.md)
+for tested behaviour and limitations.
+
+## Installation
+
+Requires Go 1.24 or later:
+
+```sh
+go install github.com/Lordeagle4/hot-take/cmd/hot-take@v0.1.0-alpha.1
+hot-take --version
+hot-take demo "What time is it?"
+```
+
+See [installation and starter setup](docs/installation.md). The source-based
+quick start below assumes you have cloned the repository.
 
 ## Design principles
 

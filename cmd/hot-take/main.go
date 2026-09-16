@@ -26,7 +26,7 @@ import (
 	clocktool "github.com/Lordeagle4/hot-take/tools/clock"
 )
 
-const applicationVersion = "0.1.0-dev"
+const applicationVersion = "0.1.0-alpha.1"
 
 type exampleModel struct{}
 
@@ -63,6 +63,14 @@ func run(ctx context.Context, arguments []string, input io.Reader, output io.Wri
 		return fmt.Errorf("usage: hot-take <demo|run> [options] <message>")
 	}
 	switch arguments[0] {
+	case "--version":
+		if len(arguments) != 1 {
+			return fmt.Errorf("usage: hot-take --version")
+		}
+		if _, err := fmt.Fprintln(output, applicationVersion); err != nil {
+			return fmt.Errorf("write version: %w", err)
+		}
+		return nil
 	case "demo":
 		return runDemo(ctx, arguments[1:], output)
 	case "run":
