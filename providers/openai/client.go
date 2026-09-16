@@ -165,13 +165,13 @@ type responseRequest struct {
 }
 
 type inputItem struct {
-	Type      string          `json:"type,omitempty"`
-	Role      provider.Role   `json:"role,omitempty"`
-	Content   string          `json:"content,omitempty"`
-	CallID    string          `json:"call_id,omitempty"`
-	Name      string          `json:"name,omitempty"`
-	Arguments string          `json:"arguments,omitempty"`
-	Output    string          `json:"output,omitempty"`
+	Type      string        `json:"type,omitempty"`
+	Role      provider.Role `json:"role,omitempty"`
+	Content   string        `json:"content,omitempty"`
+	CallID    string        `json:"call_id,omitempty"`
+	Name      string        `json:"name,omitempty"`
+	Arguments string        `json:"arguments,omitempty"`
+	Output    string        `json:"output,omitempty"`
 }
 
 type functionTool struct {

@@ -122,7 +122,7 @@ func TestNewRejectsInvalidConfiguration(t *testing.T) {
 
 	tests := map[string]Config{
 		"missing API key": {Model: "test-model"},
-		"unsafe HTTP":    {APIKey: "test-key", Model: "test-model", BaseURL: "http://api.example.com/v1"},
+		"unsafe HTTP":     {APIKey: "test-key", Model: "test-model", BaseURL: "http://api.example.com/v1"},
 		"URL credentials": {APIKey: "test-key", Model: "test-model", BaseURL: "https://user@example.com/v1"},
 		"URL query":       {APIKey: "test-key", Model: "test-model", BaseURL: "https://api.example.com/v1?debug=true"},
 	}
